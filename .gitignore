@@ -1,0 +1,22 @@
+# Raw data — too large for git, redownload from source
+data_downloads/raw/
+*.zip
+*.parquet
+*.dta
+*.Rdata
+*.rds
+
+# OS / editor
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Stata / LaTeX junk
+*.smcl
+*.log
+*.aux
+*.out
