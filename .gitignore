@@ -20,3 +20,11 @@ __pycache__/
 *.log
 *.aux
 *.out
+
+# Project data dirs (raw/intermediate/final/legacy are local-only; handcoded IS committed)
+data/raw/
+data/intermediate/
+data/final/
+data/legacy/
+.env
+*.csv.gz
