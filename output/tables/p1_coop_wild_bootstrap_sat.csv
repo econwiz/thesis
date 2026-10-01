@@ -1,0 +1,4 @@
+term,estimate,t_stat,p_boot,ci_low,ci_high,B
+bin7_20to25_x_pov_coop,-0.003,-0.175,0.892,-0.041,0.045,9999
+bin8_25to30_x_pov_coop,-0.025,-1.539,0.431,-0.07,0.015,9999
+bin9_over30_x_pov_coop,-0.011,-0.675,0.573,-0.26,0.196,9999
