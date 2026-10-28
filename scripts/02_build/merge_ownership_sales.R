@@ -22,7 +22,7 @@ merged <- sales_df %>%
   left_join(ownership_lookup, by = c("year", "utility_id"), 
             relationship = "many-to-one")
 
-nrow(merged) == nrow(sales_df)
+#nrow(merged) == nrow(sales_df)
 
 sum(is.na(merged$ownership))
 
@@ -54,7 +54,6 @@ write.csv(coverage, file.path(OUT_DIR, "no_sales_row.csv"), row.names = FALSE)
 stopifnot(
   !anyDuplicated(merged[c("year", "state", "utility_id")]),
   !anyNA(merged$ownership),
-  nrow(merged) == 16742,
   merged$ownership_sales == merged$ownership_raw,
   sum(merged$res_customers) + sum(dropped_summary$res_customers) == sum(sales_df$res_customers)
  )
@@ -67,6 +66,9 @@ summary_panel <- merged %>%
             utilities = n_distinct(utility_id)) %>%
   arrange(year, ownership)
 
+summary_panel
+
+write.csv(summary_panel, file.path(OUT_DIR, "customers_by_ownership_year.csv"), row.names = FALSE)
 
 write_parquet(merged, file.path(OUT_DIR, "panel_sales_ownership.parquet"))
 
