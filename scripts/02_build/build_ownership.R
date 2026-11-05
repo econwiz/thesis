@@ -101,30 +101,23 @@ read_census_res_customers <- function(y) {
   idx  <- find_residential_customers_col(path)
   su   <- read_excel(path, skip = 2)
   names(su)[idx] <- "res_customers"
-  # "Short Form" is (like Utility_Data's) a 2019-only column here too -- only
-  # 2019 folds short-form filers into this file inline; drop them if present.
   if ("Short Form" %in% names(su)) su <- filter(su, is.na(`Short Form`) | `Short Form` != "Y")
   su %>%
     mutate(year = y, res_customers = suppressWarnings(as.numeric(res_customers))) %>%
-    filter(`Service Type` == "Bundled") %>%
-    select(year, `Utility Number`, Ownership, res_customers, `State`)
+    select(year, `Utility Number`, Ownership, res_customers, `State`, `Service Type`, `Part`)
 }
 
 census_res <- bind_rows(lapply(YEARS, read_census_res_customers))
 
-dropped_ids <- ownership_raw_panel %>% filter(is.na(ownership)) %>%
-  select(utility_id) %>%
-  distinct()
-
-dropped_ids
-
 drop_summary <- census_res %>%
   rename(utility_id = `Utility Number`,
-         ownership = `Ownership`) %>% 
-  inner_join(dropped_ids, by = "utility_id") %>%
-  group_by(year, ownership) %>%
+         ownership = `Ownership`,
+         service_type = `Service Type`) %>% 
+  filter(is.na(map_ownership(ownership))) %>%
+  filter(!is.na(ownership) & !utility_id %in% c(99999, 88888)) %>%
+  group_by(year, ownership, service_type) %>%
   summarize(
-    dropped_utilities = n(),
+    dropped_utilities = n_distinct(utility_id),
     total_res_customers = sum(res_customers, na.rm = TRUE),
     .groups = "drop"
   )
@@ -135,32 +128,17 @@ drop_summary %>% group_by(year) %>%
   )
 
 write.csv(drop_summary, file.path(OUT_DIR, "dropped_residential_counts.csv"), row.names = FALSE)
-# ---- Step 4: drop the categories that don't map to one of the four ----------
-# TODO: filter out ownership == NA now that you've printed what's being lost.
 
 ownership_panel <- ownership_raw_panel %>%
   filter(!is.na(ownership)) 
 
 nrow(ownership_raw_panel) - nrow(ownership_panel)
 
-# ---- Step 5: deduplicate on (year, utility_id, state) ------------------------
-# TODO: if a utility appears more than once for the same (year, state) --
-# e.g. in both Utility_Data and Short_Form, which shouldn't normally happen --
-# keep the Utility_Data (short_form == FALSE) row as the more complete record.
-
 clean_ownership <- ownership_panel %>%
   arrange(year, State, utility_id, short_form) %>%
   distinct(year, State, utility_id, .keep_all = TRUE) %>%
   select(year, utility_id, State, utility_name, ownership_raw, ownership, short_form) %>%
   rename(state = `State`) 
-  
-
-# ---- Step 6: flag utilities whose ownership changes across years ------------
-# TODO: group by utility_id, count distinct `ownership` values across all
-# years/states for that utility. A handful of switchers is normal (compare
-# against the ~14-15 we saw in the legacy county panel); dozens means
-# something upstream is misparsing. Print the full list for a by-hand look --
-# don't silently fix or drop them.
 
 clean_ownership <- clean_ownership %>%
   group_by(utility_id) %>%
@@ -194,31 +172,24 @@ clean_ownership <- clean_ownership %>%
   mutate(tva_distributor = FALSE)
 
 
-census_cleaned <- census_res %>%
-  rename(utility_id = `Utility Number`,
-         ownership = `Ownership`,
-         state = `State`) %>%
-  select(-ownership) %>%
-  summarize(.by = c(year, utility_id, state),
-            res_customers = sum(res_customers, na.rm = TRUE))
+#census_cleaned <- census_res %>%
+ # rename(utility_id = `Utility Number`,
+ #        ownership = `Ownership`,
+#         state = `State`) %>%
+#  select(-ownership) %>%
+#  summarize(.by = c(year, utility_id, state),
+    #        res_customers = sum(res_customers, na.rm = TRUE))
 
-residential_counts <- clean_ownership %>%
-  left_join(census_cleaned, by = c("state", "utility_id", "year")) %>%
-    summarize(.by = c(year, ownership),
-              utilities = n(),
-              utilities_with_res = sum(!is.na(res_customers)),
-              res_customers = sum(res_customers, na.rm = TRUE))
+#residential_counts <- clean_ownership %>%
+#  left_join(census_cleaned, by = c("state", "utility_id", "year")) %>%
+  #  summarize(.by = c(year, ownership),
+  #            utilities = n(),
+   #           utilities_with_res = sum(!is.na(res_customers)),
+          #    res_customers = sum(res_customers, na.rm = TRUE))
 
-write.csv(residential_counts, file.path(OUT_DIR, "residential_counts_by_ownership_year.csv"), row.names = FALSE)
+#write.csv(residential_counts, file.path(OUT_DIR, "residential_counts_by_ownership_year.csv"), row.names = FALSE)
 
 
-
-# ---- Step 8: validation (fail loudly) ----------------------------------------
-# TODO: stopifnot(...) checks:
-#   - co-op utility count is between 875 and 895 in every year
-#   - public utility count is between 1820 and 1842 in every year
-#   - no duplicate (year, utility_id, state) keys
-#   - ownership is never NA (after step 4's drop)
 
 utility_counts  <- clean_ownership %>%
   group_by(year) %>%
