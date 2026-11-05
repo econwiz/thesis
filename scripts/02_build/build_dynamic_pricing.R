@@ -11,6 +11,7 @@ EXTRACTED <- file.path(RAW, "extracted")
 EXTRACTED_SF <- file.path(RAW, "extracted_sf")
 OUT_DIR   <- "data/intermediate"
 YEARS     <- 2015:2024
+THRESH <- 0.1
 
 
 wanted_cols <- tibble::tribble(
@@ -137,26 +138,113 @@ merged_pricing_counts <- merged_pricing %>%
 #   (share >= THRESHOLD in 2 consecutive years AND tou_res TRUE). Put THRESHOLD at the top.
 
 threshold = 0.10
-merged_pricing_counts <- merged_pricing_counts %>%
+
+hazard_sample <- merged_pricing_counts %>%
   filter(own_short_form == FALSE) %>%
   group_by(utility_id) %>%
   mutate(
-    first_tou_year = if (any(res_tou %in% TRUE)) {
+    first_tou_year = if (any(tou_res %in% TRUE)) {
       min(year[res_tou %in% TRUE], na.rm = TRUE)
     } else {NA_integer_},
     
-    left_censored = first_tou_year == min(year, na.rm = TRUE),
+    left_censored = coalesce(first_tou_year == min(year, na.rm = TRUE), FALSE),
     
-    adopter = res_tou %in% TRUE & lag(res_tou %in% FALSE, default = FALSE),
+    adopter = coalesce(year == first_tou_year & !left_censored, FALSE),
     
+    reversal = tou_res %in% FALSE & lag(tou_res) %in% TRUE,
     
-  )
+    high_share = tou_res %in% TRUE &  coalesce(enroll_share >= THRESH, FALSE)
+    
+
+  ) %>%
+  ungroup()
+
+hazard_sample <- hazard_sample %>%
+  arrange(utility_id, year) %>%
+  group_by(utility_id) %>%
+  mutate(persistent_high = high_share &
+  ((lead(high_share) %in% TRUE & lead(year) == year + 1) |
+     (lag(high_share)  %in% TRUE & lag(year)  == year - 1))) %>%
+  ungroup()
+  
+
+hazard_sample %>% filter(adopter == TRUE)
 
 # ---- I. CHECK IN table --------------------------------------------------------
 # TODO: switcher counts by ownership; write.csv to output/tables/.
 
+utility_class <- hazard_sample %>%
+  summarize(.by = c(utility_id, ownership),
+            n_years       = n(),
+            adopted       = any(adopter),
+            left_censored = any(left_censored),
+            ever_on       = any(tou_res %in% TRUE),
+            n_reversals   = sum(reversal))
+
+# Step 2: counts by ownership
+switch_counts <- utility_class %>%
+  summarize(.by = ownership,
+            utilities       = n(),
+            adopters        = sum(adopted),
+            already_on      = sum(left_censored),
+            never_on        = sum(!ever_on),
+            reverted        = sum(n_reversals > 0),
+            reversal_events = sum(n_reversals)) %>%
+  arrange(ownership)
+
+
+write.csv(switch_counts, "output/tables/dp_switch_counts.csv", row.names = FALSE)
 # ---- J. Validation, save ------------------------------------------------------
 # TODO: stopifnot: unique keys; indicators NA only on short-form rows 2020+;
 #       all ten years present; PG&E 14328, SCE 17609, SDG&E 16609, SMUD 16534, LADWP 11208
 #       have tou_res TRUE every year. write_parquet to data/intermediate/.
   
+
+
+stopifnot(with(switch_counts, utilities == adopters + already_on + never_on))
+
+
+
+
+
+# ---- J. Validation, save ------------------------------------------------------
+KEY_UTILITIES <- c(PGE = 14328, SCE = 17609, SDGE = 16609, SMUD = 16534, LADWP = 11208)
+
+stopifnot(
+  # skeleton: one row per ownership-panel utility-year, no duplicates, all years
+  nrow(merged_pricing_counts) == nrow(ownership_lookup),
+  !anyDuplicated(merged_pricing_counts[c("year", "utility_id")]),
+  setequal(unique(merged_pricing_counts$year), YEARS),
+  
+  # tou_res: never missing for full-form filers, missing only on short-form rows
+  !anyNA(merged_pricing_counts$tou_res[!merged_pricing_counts$own_short_form]),
+  
+  # in_dp_file has no missing values and matches only utility-years in the file
+  !anyNA(merged_pricing_counts$in_dp_file),
+  sum(merged_pricing_counts$in_dp_file) <= nrow(pricing_details_clean),
+  
+  # share: no NaN / Inf (shares above 1 are flagged below, not an error)
+  !any(is.nan(merged_pricing_counts$enroll_share) | is.infinite(merged_pricing_counts$enroll_share)),
+  
+  # hazard sample: full-form only, unique, flags never missing
+  all(!hazard_sample$own_short_form),
+  !anyDuplicated(hazard_sample[c("year", "utility_id")]),
+  !anyNA(hazard_sample$adopter), !anyNA(hazard_sample$reversal), !anyNA(hazard_sample$left_censored),
+  
+  # at most one first adoption per utility, and never a left-censored one
+  max(summarize(hazard_sample, .by = utility_id, n = sum(adopter))$n) <= 1,
+  !any(hazard_sample$adopter & hazard_sample$left_censored),
+  
+  # sanity anchors: the big California utilities, SMUD and LADWP are on TOU in every year
+  all(merged_pricing_counts$tou_res[merged_pricing_counts$utility_id %in% KEY_UTILITIES] %in% TRUE),
+  n_distinct(merged_pricing_counts$utility_id[merged_pricing_counts$utility_id %in% KEY_UTILITIES]) == length(KEY_UTILITIES)
+)
+
+n_over_1 <- sum(merged_pricing_counts$enroll_share > 1, na.rm = TRUE)
+if (n_over_1 > 0) message(n_over_1, " utility-years have enroll_share > 1 (flagged, not dropped)")
+
+write_parquet(merged_pricing_counts, file.path(OUT_DIR, "dp_utility_year.parquet"))
+write_parquet(hazard_sample,         file.path(OUT_DIR, "dp_hazard_sample.parquet"))
+
+
+
