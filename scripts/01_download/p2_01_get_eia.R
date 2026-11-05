@@ -63,7 +63,10 @@ extract_needed <- function(y) {
   zip_path <- file.path(RAW, sprintf("f861%d.zip", y))
   files <- c(sprintf("Utility_Data_%d.xlsx", y),
              sprintf("Service_Territory_%d.xlsx", y),
-             sprintf("Sales_Ult_Cust_%d.xlsx", y))
+             sprintf("Sales_Ult_Cust_%d.xlsx", y),
+             sprintf("Advanced_Meters_%d.xlsx", y))
+  if (y <= 2016) files <- c(files, sprintf("Dynamic_Pricing%d.xlsx", y))
+  else files <- c(files, sprintf("Dynamic_Pricing_%d.xlsx", y))
   if (y != 2019) files <- c(files, sprintf("Short_Form_%d.xlsx", y))
   out_dir <- file.path(RAW, "extracted")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
