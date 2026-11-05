@@ -54,7 +54,7 @@ read_dp_year <- function(y) {
   dp %>% mutate(year = y) %>%
     rename(utility_id = `Utility Number`, state = `State`, 
            any_of(c(short_form = "Short Form", ba_code = "BA Code"))) %>%
-    mutate(res_enrolled = as.numeric(na_if(res_enrolled, ".")),
+    mutate(res_enrolled = as.numeric(if_else(res_enrolled == ".", "0", res_enrolled)),
            utility_id = as.numeric(utility_id)) %>%
     select(year, utility_id, state, any_of(c("short_form", "ba_code")),
            all_of(wanted_cols$new_name))
@@ -102,7 +102,8 @@ merged_pricing <- ownership_lookup %>%
   rename(own_short_form = short_form) %>%
   left_join(pricing_details_clean, by = c("year", "utility_id"), 
             relationship = "one-to-one") %>%
-  mutate(in_dp_file = coalesce(in_dp_file, FALSE),
+  mutate(in_dp_file   = coalesce(in_dp_file, FALSE),
+                 res_enrolled = if_else(!in_dp_file & !own_short_form, 0, res_enrolled),
             tou_res = case_when(in_dp_file     ~ res_tou,   # can be NA for short-form 2020+
                                 own_short_form ~ NA,
                                 TRUE           ~ FALSE), 
