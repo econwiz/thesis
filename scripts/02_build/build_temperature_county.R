@@ -46,10 +46,7 @@ bin_month <- function(nc_path, measure, W, edges) {
     as.vector(terra::ext(r)) == as.vector(w_obj$grid_ext)
   )
   
-  x <- values(r)          # matrix: cells (rows) x days (columns), in the grid's cell order
-  # TODO: valid <- !is.na(x)           (cells x days, logical)
-  # TODO: denominator: W %*% valid, giving counties x days.
-  #       (Matrix multiplication needs numeric; what do you have to convert?)
+  x <- values(r)
   valid <- !is.na(x)
   storage.mode(valid) <- "numeric"
   
@@ -86,21 +83,16 @@ bin_month <- function(nc_path, measure, W, edges) {
   return(list(
     daily_shares = bin_shares,
     bin_days = bin_days))
-  
-  # TODO return a list: daily shares per bin (to check), and bin-days = rowSums over days
 }
 
 
 res <- bin_month(file.path(RAW_NCLIM, "ncdd-202007-grd-scaled.nc"), "tavg", W, EDGES$tavg)
 
-# ---- 3. Checks (the CHECK IN) ----
-# TODO: for every county-day, shares across the bins sum to 1 (within tolerance).
-
+# ---- 3. Checks 
 county_day_sums <- Reduce("+", res$daily_shares)
 
 range(county_day_sums, na.rm = TRUE)
 
-# TODO: for every county, bin-days across the bins sum to 31.
 
 bd <- as.data.frame(res$bin_days) # counties x bins, row_names = GEOID 
 bd$county_fips <- rownames(res$bin_days)
@@ -110,12 +102,12 @@ bd$measure <- "tavg"
 
 bin_cols <- grep("^bin_", names(bd), value = TRUE)    # only the bin columns
 bd$n_days <- rowSums(bd[, bin_cols])
-range(bd$n_days)                                       # want 31 and 31, within ~1e-9
+range(bd$n_days)                                      
 all(abs(bd$n_days - 31) < 1e-8)
 
 bd[bd$county_fips %in% c("01001", "04013", "23003"), c("county_fips", bin_cols)]
 
-range(bd$n_days)                       # all 3,108 counties
+range(bd$n_days)                      
 all(abs(bd$n_days - 31) < 1e-8)
 
 
